@@ -8,10 +8,14 @@ from datetime import datetime, timezone
 
 
 SECTION_HEADERS = {
-    "github": "GitHub Trending",
-    "hackernews": "Hacker News",
-    "rss": "AI News",
+    "money_moves":  "Money Moves",
+    "platforms":    "Platforms to Watch",
+    "systems":      "Systems to Copy",
+    "distribution": "Distribution Plays",
+    "signals":      "Early Signals",
 }
+
+SECTIONS_ORDER = ["money_moves", "platforms", "systems", "distribution", "signals"]
 
 
 def build(
@@ -20,15 +24,7 @@ def build(
     date_str: str,
     sections_order: list[str] | None = None,
 ) -> str:
-    """
-    Build a Markdown report string from summarized items.
-    Args:
-        summarized_items: List of SummarizedItem
-        briefing_intro: Intro paragraph from Claude
-        date_str: Human-readable date, e.g. "April 16, 2026"
-        sections_order: Order to render sections. Defaults to github/hackernews/rss.
-    """
-    sections_order = sections_order or ["github", "hackernews", "rss"]
+    sections_order = sections_order or SECTIONS_ORDER
     lines = []
 
     lines.append(f"# Daily AI Intelligence Report — {date_str}\n")
@@ -36,11 +32,11 @@ def build(
     if briefing_intro:
         lines.append(f"{briefing_intro}\n")
 
-    # Group by section
     by_section: dict[str, list] = {s: [] for s in sections_order}
     for item in summarized_items:
-        if item.section in by_section:
-            by_section[item.section].append(item)
+        ds = getattr(item, "display_section", item.section)
+        if ds in by_section:
+            by_section[ds].append(item)
 
     for section in sections_order:
         items = by_section.get(section, [])
@@ -52,11 +48,15 @@ def build(
 
         for i, item in enumerate(items, 1):
             lines.append(f"### {i}. [{item.title}]({item.url})\n")
-            if item.summary:
-                lines.append(f"{item.summary}\n")
-            if item.insight:
-                lines.append(f"> **Insight:** {item.insight}\n")
-            lines.append("")  # blank line between items
+            if getattr(item, "what", ""):
+                lines.append(f"{item.what}\n")
+            if getattr(item, "why", ""):
+                lines.append(f"> **Why it matters:** {item.why}\n")
+            if getattr(item, "how_to_use", ""):
+                lines.append(f"> **How I could use this:** {item.how_to_use}\n")
+            if getattr(item, "action", ""):
+                lines.append(f"> **Action:** {item.action}\n")
+            lines.append("")
 
     lines.append("---")
     lines.append(f"*Generated {datetime.now(tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*\n")

@@ -15,19 +15,25 @@ import anthropic
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
-MAX_TOKENS_PER_ITEM = 300
-MAX_TOKENS_BRIEFING = 400
+MAX_TOKENS_PER_ITEM = 450
+MAX_TOKENS_BRIEFING = 500
+
+
+DISPLAY_SECTIONS = ["money_moves", "platforms", "systems", "distribution", "signals"]
 
 
 @dataclass
 class SummarizedItem:
     title: str
     url: str
-    summary: str           # 2-sentence factual summary
-    insight: str           # operator insight / "so what"
+    display_section: str   # money_moves | platforms | systems | distribution | signals
+    what: str              # plain-English explanation
+    why: str               # trend signal / why it matters now
+    how_to_use: str        # practical application for a non-technical operator
+    action: str            # one specific actionable idea
     source: str
-    section: str
-    original: object       # reference back to the original dataclass
+    section: str           # original data source: github | hackernews | rss
+    original: object
 
 
 def summarize_items(ranked_items: list, operator_context: str = "") -> list[SummarizedItem]:
@@ -69,14 +75,24 @@ def generate_briefing_intro(
 
     context_line = f"\nOperator context: {operator_context}" if operator_context else ""
 
-    prompt = f"""You are writing a morning AI intelligence briefing for {date_str}.
+    prompt = f"""You are writing a morning briefing for a non-technical entrepreneur who wants to find opportunities in AI.
 
-Below are today's top AI/tech stories:{context_line}
+Today's stories:{context_line}
 
 {titles_str}
 
-Write a 3-4 sentence executive summary that identifies the 2-3 dominant themes across these stories.
-Be specific, direct, and insightful — not generic. No bullet points. No greeting. Just the paragraph."""
+Identify 2-3 top opportunity themes from today's stories. For each theme, write a bold header and 2-3 bullets focused on money, automation, or advantage.
+Plain English only. No jargon. Be specific and actionable.
+
+Use exactly this format (no intro, no conclusion):
+
+**[OPPORTUNITY THEME IN CAPS]**
+- [specific opportunity or insight, 1 sentence]
+- [specific opportunity or insight, 1 sentence]
+
+**[OPPORTUNITY THEME IN CAPS]**
+- [specific opportunity or insight, 1 sentence]
+- [specific opportunity or insight, 1 sentence]"""
 
     try:
         response = client.messages.create(
@@ -96,17 +112,27 @@ def _summarize_one(client, ranked, operator_context: str) -> "SummarizedItem":
 
     context_line = f"\nOperator context: {operator_context}" if operator_context else ""
 
-    prompt = f"""You are an AI intelligence analyst writing concise briefings for a technically literate audience tracking the AI/tech industry.{context_line}
+    prompt = f"""You are writing a daily briefing for a non-technical entrepreneur who wants to find opportunities in AI — ways to make money, automate their business, or spot trends early. No jargon. No theory. Just practical, plain-English insights.{context_line}
 
 Item details:
 Title: {item.title}
 Source: {ranked.source}
 {source_context}
 
-Respond with exactly this format (no extra text):
+First, classify this item into exactly ONE of these sections:
+- money_moves: Direct opportunities to make money, save time, or offer a service
+- platforms: Tools or companies making AI easier for non-coders (gaining traction)
+- systems: Workflows, automations, or business models worth copying
+- distribution: Content strategies, hooks, or formats getting attention
+- signals: Early-stage tools, repos, or patterns before they go mainstream
 
-SUMMARY: [2 sentences. First: what it is. Second: key technical or business detail.]
-INSIGHT: [1 sentence. The practical "so what" — why this matters for someone building with AI or investing in the space.]"""
+Then respond with exactly this format (no extra text, no preamble):
+
+SECTION: [money_moves | platforms | systems | distribution | signals]
+WHAT: [1 sentence. What this is, in plain English. Imagine explaining to a smart friend who doesn't code.]
+WHY: [1 sentence. Why this is gaining traction or matters right now — the trend signal.]
+HOW: [1 sentence. How a non-technical entrepreneur could practically use or benefit from this today.]
+ACTION: [1 sentence. One specific thing they could do this week to test, build, or profit from this — be concrete.]"""
 
     response = client.messages.create(
         model=MODEL,
@@ -115,13 +141,16 @@ INSIGHT: [1 sentence. The practical "so what" — why this matters for someone b
     )
 
     text = response.content[0].text.strip()
-    summary, insight = _parse_response(text)
+    display_section, what, why, how_to_use, action = _parse_response(text)
 
     return SummarizedItem(
         title=item.title,
         url=item.url,
-        summary=summary,
-        insight=insight,
+        display_section=display_section,
+        what=what,
+        why=why,
+        how_to_use=how_to_use,
+        action=action,
         source=ranked.source,
         section=ranked.section,
         original=item,
@@ -148,24 +177,33 @@ def _build_source_context(item, section: str) -> str:
     return ""
 
 
-def _parse_response(text: str) -> tuple[str, str]:
-    """Extract SUMMARY and INSIGHT from Claude's structured response."""
-    summary = ""
-    insight = ""
+def _parse_response(text: str) -> tuple[str, str, str, str, str]:
+    """Extract SECTION, WHAT, WHY, HOW, ACTION from Claude's structured response."""
+    display_section = "signals"
+    what = ""
+    why = ""
+    how_to_use = ""
+    action = ""
 
     for line in text.splitlines():
-        if line.startswith("SUMMARY:"):
-            summary = line[len("SUMMARY:"):].strip()
-        elif line.startswith("INSIGHT:"):
-            insight = line[len("INSIGHT:"):].strip()
+        if line.startswith("SECTION:"):
+            val = line[len("SECTION:"):].strip().lower()
+            if val in DISPLAY_SECTIONS:
+                display_section = val
+        elif line.startswith("WHAT:"):
+            what = line[len("WHAT:"):].strip()
+        elif line.startswith("WHY:"):
+            why = line[len("WHY:"):].strip()
+        elif line.startswith("HOW:"):
+            how_to_use = line[len("HOW:"):].strip()
+        elif line.startswith("ACTION:"):
+            action = line[len("ACTION:"):].strip()
 
-    # Fallback: split on newlines if format not followed
-    if not summary and text:
+    if not what and text:
         lines = [l.strip() for l in text.splitlines() if l.strip()]
-        summary = lines[0] if lines else text[:200]
-        insight = lines[1] if len(lines) > 1 else ""
+        what = lines[0] if lines else text[:200]
 
-    return summary, insight
+    return display_section, what, why, how_to_use, action
 
 
 def _fallback(ranked) -> "SummarizedItem":
@@ -175,8 +213,11 @@ def _fallback(ranked) -> "SummarizedItem":
     return SummarizedItem(
         title=item.title,
         url=item.url,
-        summary=desc[:200] if desc else item.title,
-        insight="",
+        display_section="signals",
+        what=desc[:200] if desc else item.title,
+        why="",
+        how_to_use="",
+        action="",
         source=ranked.source,
         section=ranked.section,
         original=item,

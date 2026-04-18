@@ -43,9 +43,9 @@ logger = logging.getLogger("main")
 # ── Config ────────────────────────────────────────────────────────────────────
 OPERATOR_CONTEXT = os.getenv(
     "OPERATOR_CONTEXT",
-    "The reader is a technically literate entrepreneur and AI practitioner who "
-    "wants to stay current on AI tools, models, infrastructure, and business trends. "
-    "Prioritize practical implications and signal over hype.",
+    "The reader is a non-technical entrepreneur — a landlord, Airbnb host, and small business owner "
+    "who wants to find practical ways to use AI to make money, save time, or automate their business. "
+    "No coding skills. Prioritize actionable opportunities over technical detail.",
 )
 
 EMAIL_RECIPIENTS = [
@@ -57,17 +57,18 @@ EMAIL_RECIPIENTS = [
 GITHUB_LANGUAGE_FILTER = os.getenv("GITHUB_LANGUAGE_FILTER", "")  # e.g. "python"
 HN_AI_ONLY = os.getenv("HN_AI_ONLY", "true").lower() == "true"
 
-SECTIONS_ORDER = ["github", "hackernews", "rss"]
+SECTIONS_ORDER = ["money_moves", "platforms", "systems", "distribution", "signals"]
 GITHUB_TOP = int(os.getenv("GITHUB_TOP", "5"))
 HN_TOP = int(os.getenv("HN_TOP", "7"))
 RSS_TOP = int(os.getenv("RSS_TOP", "8"))
+REPORT_TOP_N = int(os.getenv("REPORT_TOP_N", "10"))
 
 
 # ── Main pipeline ─────────────────────────────────────────────────────────────
 
 def run(send_email: bool = True, dry_run: bool = False, output_dir: str = "reports"):
     date_str = datetime.now(tz=timezone.utc).strftime("%B %d, %Y")
-    subject = f"AI Intelligence Report — {datetime.now(tz=timezone.utc).strftime('%b %d, %Y')}"
+    subject = f"Daily AI Intelligence Report: {datetime.now(tz=timezone.utc).strftime('%b %d, %Y')}"
 
     logger.info(f"=== Daily AI Intelligence Report — {date_str} ===")
 
@@ -93,10 +94,14 @@ def run(send_email: bool = True, dry_run: bool = False, output_dir: str = "repor
         rss_top=RSS_TOP,
     )
 
-    # Flatten in section order for summarization
+    # Flatten ranked items (ranked_by_section uses source keys: github/hackernews/rss)
     all_ranked = []
-    for section in SECTIONS_ORDER:
+    for section in ["github", "hackernews", "rss"]:
         all_ranked.extend(ranked_by_section.get(section, []))
+
+    # Cap to top N by score
+    all_ranked.sort(key=lambda r: r.score, reverse=True)
+    all_ranked = all_ranked[:REPORT_TOP_N]
 
     logger.info(f"Ranked total: {len(all_ranked)} items")
 
